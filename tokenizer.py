@@ -120,19 +120,22 @@ class WindowsIOBReader(IOBReader):
             self.label2index[l] = i
             self.index2label[i] = l
 
-        X, y = WindowsIOBReader.extractWindows(X, y, 13)
+        X, y = WindowsIOBReader.extractWindows(X, y, 5)
 
         self.maxlen = max([len(x) for x in X])
 
         X_enc = [[self.char2index[c] for c in x] for x in X]
         self.max_label = max(self.label2index.values()) + 1
 
-        y_enc = [[0] * (self.maxlen - len(ey)) + [self.label2index[c] for c in ey] for ey in y]
-        #one_hot
-        y_enc = [[Reader.encode(c, self.max_label) for c in ey] for ey in y_enc]
+        print(y[0])
 
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
+        #y_enc = [[self.label2index[c] for c in ey] for ey in y]
+        #one_hot
+        y_enc = [[Reader.encode(self.label2index[c], self.max_label) for c in ey] for ey in y]
+
+        # y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
+        # X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+        # y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
@@ -179,78 +182,6 @@ class Tokenizer(object):
         # model.compile(loss='categorical_crossentropy', optimizer='adam', class_mode='categorical')
 
         return model
-
-    
-    # @staticmethod
-    # def extractWindows(dataset, labels, window_size):
-    #     d = []
-    #     l = []
-    #     for i in range(len(dataset)-window_size+1):
-    #         d.append(dataset[i:i+window_size])
-    #         #l.append(labels[window_size+i-3])
-    #         l.append(labels[i:i+window_size])
-    #     return np.asarray(d), np.asarray(l)
-
-
-    # def read(self, delimiter='\t'):
-    #     chars = set()
-    #     labels = set()
-    #     X = []
-    #     y = []
-    #     examples = []
-    #     for line in self.input:
-    #         char, label = (ch.strip() for ch in line.split(delimiter))
-    #         chars.add(char)
-    #         labels.add(label)
-    #         X.append(char)
-    #         y.append(label)
-
-    #         examples.append((char, label))
-        
-    #     for i, c in enumerate(chars):
-    #         self.char2index[c] = i
-    #         self.index2char[i] = c
-
-    #     for i, l in enumerate(labels):
-    #         self.label2index[l] = i
-    #         self.index2label[i] = l
-
-    #     # X = []
-    #     # y = []
-    #     # build sequences
-    #     # sequence_X = []
-    #     # sequence_y = []
-    #     # for char, label in examples:
-    #     #     if label == 'B-S' and sequence_y.count('B-S') > random.randint(1, 4):
-    #     #         X.append(sequence_X)
-    #     #         y.append(sequence_y)
-    #     #         sequence_X = []
-    #     #         sequence_y = []
-    #     #     sequence_X.append(char)
-    #     #     sequence_y.append(label)
-
-    #     X, y = Tokenizer.extractWindows(X, y, 13)
-
-    #     self.maxlen = max([len(x) for x in X])
-
-    #     print('maxlen', self.maxlen)
-
-    #     def encode(x, n):
-    #         result = np.zeros(n)
-    #         result[x] = 1
-    #         return result
-
-    #     X_enc = [[self.char2index[c] for c in x] for x in X]
-    #     self.max_label = max(self.label2index.values()) + 1
-
-    #     y_enc = [[0] * (self.maxlen - len(ey)) + [self.label2index[c] for c in ey] for ey in y]
-    #     #one_hot
-    #     y_enc = [[encode(c, self.max_label) for c in ey] for ey in y_enc]
-
-    #     X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-    #     y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
-
-    #     self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
 
     def train(self, batch_size=128, nb_epoch=10):
