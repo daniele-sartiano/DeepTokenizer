@@ -131,7 +131,7 @@ class WindowsIOBReader(IOBReader):
         self.window_size = window_size
 
 
-    def extractWindows(dataset, labels):
+    def extractWindows(self, dataset, labels):
         d = []
         l = []
         for i in range(len(dataset)-self.window_size+1):
@@ -223,7 +223,7 @@ class Tokenizer(object):
     def _model(self):
         model = Sequential()
         model.add(Embedding(len(self.reader.char2index), 64, input_length=self.reader.maxlen, name='embedding_layer'))
-        model.add(LSTM(32, return_sequences=True, name='lstm_layer'))
+        model.add(LSTM(32, return_sequences=self.reader==SequencesIOBReader, name='lstm_layer'))
         model.add(Dense(len(self.reader.label2index), activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
         return model
@@ -305,7 +305,8 @@ def main():
     args = parser.parse_args()
 
     if args.which == 'train':
-        tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
+        #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
+        tokenizer = Tokenizer(window_size=args.window_size, reader=WindowsIOBReader, writer=WindowsIOBWriter)
         tokenizer.train(batch_size=args.batch, nb_epoch=args.epochs)
         tokenizer.save_model()
         score = tokenizer.evaluate()
@@ -322,7 +323,7 @@ def main():
     elif args.which == 'predict':
         tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
         tokenizer.load()
-        y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
+        y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
     
 if __name__ == '__main__':
     main()
