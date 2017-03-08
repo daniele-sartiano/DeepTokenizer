@@ -42,52 +42,51 @@ class IOBReader(Reader):
 
         self.y_train = []
         self.y_test = []
-
     
-    def read(self, delimiter='\t'):
-        chars = set()
-        labels = set()
-        X = []
-        y = []
-        examples = []
-        for line in self.input:
-            char, label = (ch.strip() for ch in line.split(delimiter))
-            chars.add(char)
-            labels.add(label)
-            examples.append((char, label))
+    # def read(self, delimiter='\t'):
+    #     chars = set()
+    #     labels = set()
+    #     X = []
+    #     y = []
+    #     examples = []
+    #     for line in self.input:
+    #         char, label = (ch.strip() for ch in line.split(delimiter))
+    #         chars.add(char)
+    #         labels.add(label)
+    #         examples.append((char, label))
         
-        for i, c in enumerate(chars):
-            self.char2index[c] = i
-            self.index2char[i] = c
+    #     for i, c in enumerate(chars):
+    #         self.char2index[c] = i
+    #         self.index2char[i] = c
 
-        for i, l in enumerate(labels):
-            self.label2index[l] = i
-            self.index2label[i] = l
+    #     for i, l in enumerate(labels):
+    #         self.label2index[l] = i
+    #         self.index2label[i] = l
 
-        # build sequences
-        sequence_X = []
-        sequence_y = []
-        for char, label in examples:
-            if label == 'B-S' and sequence_y.count('B-S') > random.randint(1, 4):
-                X.append(sequence_X)
-                y.append(sequence_y)
-                sequence_X = []
-                sequence_y = []
-            sequence_X.append(char)
-            sequence_y.append(label)
+    #     # build sequences
+    #     sequence_X = []
+    #     sequence_y = []
+    #     for char, label in examples:
+    #         if label == 'B-S' and sequence_y.count('B-S') > random.randint(1, 4):
+    #             X.append(sequence_X)
+    #             y.append(sequence_y)
+    #             sequence_X = []
+    #             sequence_y = []
+    #         sequence_X.append(char)
+    #         sequence_y.append(label)
 
 
-        X_enc = [[self.char2index[c] for c in x] for x in X]
-        self.max_label = max(self.label2index.values()) + 1
+    #     X_enc = [[self.char2index[c] for c in x] for x in X]
+    #     self.max_label = max(self.label2index.values()) + 1
 
-        y_enc = [[0] * (self.maxlen - len(ey)) + [self.label2index[c] for c in ey] for ey in y]
-        #one_hot
-        y_enc = [[Reader.encode(c, self.max_label) for c in ey] for ey in y_enc]
+    #     y_enc = [[0] * (self.maxlen - len(ey)) + [self.label2index[c] for c in ey] for ey in y]
+    #     #one_hot
+    #     y_enc = [[Reader.encode(c, self.max_label) for c in ey] for ey in y_enc]
 
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
+    #     X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+    #     y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
     
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
+    #     self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
 
 class SequencesIOBReader(IOBReader):
@@ -101,15 +100,31 @@ class SequencesIOBReader(IOBReader):
             l.append(labels[i:i+window_size])
         return np.asarray(d), np.asarray(l)
 
-    
+    @staticmethod
+    def extractUniqueWindows(dataset, windows_size):
+        d = []
+        for i in range(0, len(dataset), windows_size):
+            d.append(dataset[i:i+windows_size])
+        return d
+
+    def text2indexes(self, text):
+        chars = []
+        for line in text:
+            for char in line:
+                chars.append(char)
+        X = SequencesIOBReader.extractUniqueWindows(chars, 5)
+        X_enc = [[self.char2index[c] for c in x] for x in X]
+        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+        return chars, X_enc
+
     def read(self, delimiter='\t'):
         X = []
         y = []
 
         for line in self.input:
-            char, label = (ch.strip() for ch in line.split(delimiter))
+            char, label = (ch for ch in line.split(delimiter))
             X.append(char)
-            y.append(label)
+            y.append(label.strip())
         
         for i, c in enumerate(set(X)):
             self.char2index[c] = i
@@ -236,6 +251,18 @@ class Tokenizer(object):
         p = self.model.predict_proba(X_test)
         return y, p
 
+    def tokenize(self, text):
+        chars, X = self.reader.text2indexes(text)
+        y, p = self.predict(X)
+        window_size = 5
+        index = 0
+        for i in range(0, len(chars), window_size):
+            for ii, ch in enumerate(chars[i:i+window_size]):
+                print (ch, self.reader.index2label[y[index][ii]])
+            index += 1
+
+        return y, p
+        
 
     def evaluate(self, batch_size=32):
         return self.model.evaluate(self.reader.X_test, self.reader.y_test, batch_size=batch_size)
@@ -249,24 +276,13 @@ def main():
 
     y_pred, p = tokenizer.predict(tokenizer.reader.X_test)
     #y_test = WindowsIOBWriter().write(tokenizer.reader.y_test)
-    y_test, y_pred = SequencesIOBWriter().write(tokenizer.reader.y_test, y_pred)
-
-    # def decode(elems):
-    #     # toRet = []
-    #     # for sentence in elems:
-    #     #     toRet.append([np.where(el==1)[0][0] for el in sentence])
-    #     # return toRet
-    #     return [np.where(l==1)[0][0] for l in elems]
-
-    # #y_test = list(itertools.chain.from_iterable(decode(tokenizer.reader.y_test)))
-    # #y_pred = list(itertools.chain.from_iterable(y_pred))
-    # y_test = decode(tokenizer.reader.y_test)
-    
+    y_test, y_pred = SequencesIOBWriter().write(tokenizer.reader.y_test, y_pred)    
     
     print(classification_report(y_test, y_pred, target_names=[tokenizer.reader.index2label[index] for index in sorted(tokenizer.reader.index2label)]))
     print()
     print(confusion_matrix(y_test, y_pred))
 
-
+    y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
+    
 if __name__ == '__main__':
     main()
