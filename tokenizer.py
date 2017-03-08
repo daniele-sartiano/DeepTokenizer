@@ -90,6 +90,75 @@ class IOBReader(Reader):
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
 
+class SequencesIOBReader(IOBReader):
+
+    @staticmethod
+    def extractWindows(dataset, labels, window_size):
+        d = []
+        l = []
+        for i in range(len(dataset)-window_size+1):
+            d.append(dataset[i:i+window_size])
+            l.append(labels[i:i+window_size])
+        return np.asarray(d), np.asarray(l)
+
+    
+    def read(self, delimiter='\t'):
+        X = []
+        y = []
+
+        for line in self.input:
+            char, label = (ch.strip() for ch in line.split(delimiter))
+            X.append(char)
+            y.append(label)
+        
+        for i, c in enumerate(set(X)):
+            self.char2index[c] = i
+            self.index2char[i] = c
+
+        for i, l in enumerate(set(y)):
+            self.label2index[l] = i
+            self.index2label[i] = l
+
+        X, y = SequencesIOBReader.extractWindows(X, y, 5)
+
+        self.maxlen = max([len(x) for x in X])
+
+        X_enc = [[self.char2index[c] for c in x] for x in X]
+        self.max_label = max(self.label2index.values()) + 1
+
+        #one_hot
+        y_enc = [[Reader.encode(self.label2index[c], self.max_label) for c in ey] for ey in y]
+
+        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+        y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
+
+        
+class WindowsIOBWriter(object):
+    @staticmethod
+    def decode(elems):
+        return [np.where(l==1)[0][0] for l in elems]
+
+
+    def write(self, y_test):
+        return WindowsIOBWriter.decode(y_test)
+
+
+class SequencesIOBWriter(object):
+    @staticmethod
+    def decode(elems):
+        toRet = []
+        for sentence in elems:
+            toRet.append([np.where(el==1)[0][0] for el in sentence])
+        return toRet
+    
+    def write(self, y_test, y_pred):
+        y_test = list(itertools.chain.from_iterable(SequencesIOBWriter.decode(y_test)))
+        y_pred = list(itertools.chain.from_iterable(y_pred))
+        return y_test, y_pred
+
+
 class WindowsIOBReader(IOBReader):
 
     @staticmethod
@@ -98,8 +167,7 @@ class WindowsIOBReader(IOBReader):
         l = []
         for i in range(len(dataset)-window_size+1):
             d.append(dataset[i:i+window_size])
-            #l.append(labels[window_size+i-3])
-            l.append(labels[i:i+window_size])
+            l.append(labels[window_size+i-3])
         return np.asarray(d), np.asarray(l)
 
     
@@ -127,15 +195,9 @@ class WindowsIOBReader(IOBReader):
         X_enc = [[self.char2index[c] for c in x] for x in X]
         self.max_label = max(self.label2index.values()) + 1
 
-        print(y[0])
-
-        #y_enc = [[self.label2index[c] for c in ey] for ey in y]
-        #one_hot
-        y_enc = [[Reader.encode(self.label2index[c], self.max_label) for c in ey] for ey in y]
-
-        # y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
-        # X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        # y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
+        y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
+        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+        y_enc = pad_sequences(y_enc)
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
@@ -158,29 +220,10 @@ class Tokenizer(object):
     def _model(self):
 
         model = Sequential()
-        model.add(Embedding(len(self.reader.char2index), 128, input_length=self.reader.maxlen))
-
-        model.add(LSTM(32, return_sequences=True))
-        model.add(Dense(len(self.reader.label2index), activation='softmax'))
-
-        #model.add(TimeDistributed(len(self.label2index)))
-        #model.add(Dense(len(self.label2index)))
-        #model.add(Activation('softmax'))
-        #model.add(Dropout(0.5))
-
-        #model.add(Dense(len(self.label2index), activation='softmax'))
-        
+        model.add(Embedding(len(self.reader.char2index), 64, input_length=self.reader.maxlen, name='embedding_layer'))
+        model.add(LSTM(32, return_sequences=True, name='lstm_layer'))
+        model.add(Dense(len(self.reader.label2index), activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-        # model.add(LSTM(64, init='glorot_uniform', inner_init='orthogonal',
-        #                activation='tanh', inner_activation='hard_sigmoid', 
-        #                return_sequences=False))
-        # model.add(Dropout(0.5))
-        # model.add(Dense(len(self.label2index)))
-        # model.add(Activation('softmax'))
-        
-        # model.compile(loss='categorical_crossentropy', optimizer='adam', class_mode='categorical')
-
         return model
 
 
@@ -196,57 +239,34 @@ class Tokenizer(object):
 
     def evaluate(self, batch_size=32):
         return self.model.evaluate(self.reader.X_test, self.reader.y_test, batch_size=batch_size)
-
-
-    # def score(yh, pr):
-    #     coords = [np.where(yhh > 0)[0][0] for yhh in yh]
-    #     yh = [yhh[co:] for yhh, co in zip(yh, coords)]
-    #     ypr = [prr[co:] for prr, co in zip(pr, coords)]
-    #     fyh = [c for row in yh for c in row]
-    #     fpr = [c for row in ypr for c in row]
-    #     return fyh, fpr
         
 
 def main():
-    tokenizer = Tokenizer()
-    #X_train, X_test, y_train, y_test = tokenizer.read()
-
+    tokenizer = Tokenizer(reader=SequencesIOBReader)
     tokenizer.train(batch_size=128, nb_epoch=10)
     score = tokenizer.evaluate()
     print('Raw test score:', score)
 
     y_pred, p = tokenizer.predict(tokenizer.reader.X_test)
+    #y_test = WindowsIOBWriter().write(tokenizer.reader.y_test)
+    y_test, y_pred = SequencesIOBWriter().write(tokenizer.reader.y_test, y_pred)
 
-    def decode(elems):
-        toRet = []
-        for sentence in elems:
-            toRet.append([np.where(el==1)[0][0] for el in sentence])
-        return toRet
+    # def decode(elems):
+    #     # toRet = []
+    #     # for sentence in elems:
+    #     #     toRet.append([np.where(el==1)[0][0] for el in sentence])
+    #     # return toRet
+    #     return [np.where(l==1)[0][0] for l in elems]
 
-    y_test = list(itertools.chain.from_iterable(decode(tokenizer.reader.y_test)))
-    y_pred = list(itertools.chain.from_iterable(y_pred))
+    # #y_test = list(itertools.chain.from_iterable(decode(tokenizer.reader.y_test)))
+    # #y_pred = list(itertools.chain.from_iterable(y_pred))
+    # y_test = decode(tokenizer.reader.y_test)
+    
     
     print(classification_report(y_test, y_pred, target_names=[tokenizer.reader.index2label[index] for index in sorted(tokenizer.reader.index2label)]))
     print()
     print(confusion_matrix(y_test, y_pred))
 
-
-
-# pr = model.predict_classes(X_train)
-# yh = y_train.argmax(2)
-# fyh, fpr = score(yh, pr)
-# print 'Training accuracy:', accuracy_score(fyh, fpr)
-# print 'Training confusion matrix:'
-# print confusion_matrix(fyh, fpr)
-# precision_recall_fscore_support(fyh, fpr)
-
-# pr = model.predict_classes(X_test)
-# yh = y_test.argmax(2)
-# fyh, fpr = score(yh, pr)
-# print 'Testing accuracy:', accuracy_score(fyh, fpr)
-# print 'Testing confusion matrix:'
-# print confusion_matrix(fyh, fpr)
-# precision_recall_fscore_support(fyh, fpr)
 
 if __name__ == '__main__':
     main()
