@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import print_function
 
 import sys
 import random
@@ -14,7 +15,6 @@ from keras.preprocessing.sequence import pad_sequences
 
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_recall_fscore_support
-
 
 
 class Reader(object):
@@ -134,10 +134,73 @@ class WindowsIOBReader(IOBReader):
     def extractWindows(self, dataset, labels):
         d = []
         l = []
-        for i in range(len(dataset)-self.window_size+1):
-            d.append(dataset[i:i+self.window_size])
-            l.append(labels[self.window_size+i-3])
+
+        step = (self.window_size-1)/2
+        for i, label in enumerate(labels):
+            l.append(label)
+            example = []
+            
+            for ii in range(self.window_size):
+                v = i-step+ii
+                if v < 0:
+                    example.append('<padding>')
+                elif v >= len(dataset):
+                    example.append('<padding>')
+                else:
+                    example.append(dataset[v])
+            d.append(example)
+
         return np.asarray(d), np.asarray(l)
+
+
+    def extractUniqueWindows(self, dataset):
+        d = []
+        
+        step = (self.window_size-1)/2
+        
+        for i in range(len(dataset)):
+            example = []
+            
+            for ii in range(self.window_size):
+                v = i-step+ii
+                if v < 0:
+                    example.append('<padding>')
+                elif v >= len(dataset):
+                    example.append('<padding>')
+                else:
+                    example.append(dataset[v])
+            d.append(example)
+            
+            
+        # for i in range(len(dataset)-self.window_size+1):
+        #     d.append(dataset[i:i+self.window_size])
+        return np.asarray(d)
+
+
+    def text2indexes(self, text):
+        chars = []
+        for line in text:
+            for char in line:
+                chars.append(char)
+        X = self.extractUniqueWindows(chars)
+        print(X)
+
+        #X_enc = [[self.char2index[c] for c in x] for x in X]
+
+        X_enc =  []
+        for x in X:
+            w = []
+            for c in x:
+                try:
+                    w.append(self.char2index[c])
+                except:
+                    print('%s unknown' % c, file=sys.stderr)
+                    w.append(self.char2index['<unknown>'])
+            X_enc.append(w)
+
+        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+
+        return chars, X_enc
 
     
     def read(self, delimiter='\t'):
@@ -145,13 +208,17 @@ class WindowsIOBReader(IOBReader):
         y = []
 
         for line in self.input:
-            char, label = (ch.strip() for ch in line.split(delimiter))
+            char, label = (ch for ch in line.split(delimiter))
             X.append(char)
-            y.append(label)
+            y.append(label.strip())
         
         for i, c in enumerate(set(X)):
             self.char2index[c] = i
             self.index2char[i] = c
+        self.index2char[len(self.index2char)] = '<padding>'
+        self.char2index['<padding>'] = len(self.index2char)-1
+        self.index2char[len(self.index2char)] = '<unknown>'
+        self.char2index['<unknown>'] = len(self.index2char)-1
 
         for i, l in enumerate(set(y)):
             self.label2index[l] = i
@@ -162,6 +229,7 @@ class WindowsIOBReader(IOBReader):
         self.maxlen = max([len(x) for x in X])
 
         X_enc = [[self.char2index[c] for c in x] for x in X]
+
         self.max_label = max(self.label2index.values()) + 1
 
         y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
@@ -223,6 +291,8 @@ class Tokenizer(object):
     def _model(self):
         model = Sequential()
         model.add(Embedding(len(self.reader.char2index), 64, input_length=self.reader.maxlen, name='embedding_layer'))
+
+        # FIXME return_sequences=self.reader==SequencesIOBReader <-- find a better way
         model.add(LSTM(32, return_sequences=self.reader==SequencesIOBReader, name='lstm_layer'))
         model.add(Dense(len(self.reader.label2index), activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -245,11 +315,20 @@ class Tokenizer(object):
     def tokenize(self, text, format='iob'):
         chars, X = self.reader.text2indexes(text)
         y, p = self.predict(X)
-        index = 0
-        for i in range(0, len(chars), self.window_size):
-            for ii, ch in enumerate(chars[i:i+self.window_size]):
-                print(ch, self.reader.index2label[y[index][ii]])
-            index += 1
+
+        print(len(chars))
+        print(len(y))
+
+        for i, ch in enumerate(chars):
+            print(ch, self.reader.index2label[y[i]])
+
+        # # sequences
+        # index = 0
+        # for i in range(0, len(chars), self.window_size):
+        #     for ii, ch in enumerate(chars[i:i+self.window_size]):
+        #         print(ch, self.reader.index2label[y[index][ii]])
+        #     index += 1
+
         return y, p
         
 
@@ -258,12 +337,14 @@ class Tokenizer(object):
         
 
     def classification_report(self, y_pred):
-        y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+        #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+        y_test = self.writer.write(self.reader.y_test)
         return classification_report(y_test, y_pred, target_names=[self.reader.index2label[index] for index in sorted(self.reader.index2label)])
 
 
     def confusion_matrix(self, y_pred):
-        y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+        #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+        y_test = self.writer.write(self.reader.y_test)
         return confusion_matrix(y_test, y_pred)
 
 
@@ -286,7 +367,7 @@ def main():
     subparsers = parser.add_subparsers()
 
     common_args = [
-        (['-w', '--window-size'], {'help':'window size', 'type':int, 'default':11})
+        (['-w', '--window-size'], {'help':'window size', 'type':int, 'default':5})
     ]
 
     parser_train = subparsers.add_parser('train')
@@ -321,7 +402,8 @@ def main():
         y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
 
     elif args.which == 'predict':
-        tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
+        #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
+        tokenizer = Tokenizer(window_size=args.window_size, reader=WindowsIOBReader, writer=WindowsIOBWriter)
         tokenizer.load()
         y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
     
