@@ -11,6 +11,7 @@ import cPickle as pickle
 from keras.models import Sequential, load_model
 from keras.layers import Dense, Activation, LSTM, SimpleRNN, GRU, Dropout, Input, Flatten, TimeDistributed
 from keras.layers.embeddings import Embedding
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
 
 from sklearn.cross_validation import train_test_split
@@ -303,7 +304,15 @@ class Tokenizer(object):
         self.reader.read()
         self.model = self._model()
         
-        self.model.fit(self.reader.X_train, self.reader.y_train, batch_size=batch_size, nb_epoch=nb_epoch, validation_data=(self.reader.X_test, self.reader.y_test))
+        self.model.fit(self.reader.X_train, 
+                       self.reader.y_train, 
+                       batch_size=batch_size, 
+                       nb_epoch=nb_epoch, 
+                       validation_data=(self.reader.X_test, self.reader.y_test),
+                       callbacks=[
+                           EarlyStopping(verbose=True, patience=5, monitor='val_loss'),
+                           ModelCheckpoint('TestModel-progress', monitor='val_loss', verbose=True, save_best_only=True)
+                       ])
 
 
     def predict(self, X_test):
