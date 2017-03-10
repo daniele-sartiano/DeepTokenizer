@@ -184,7 +184,7 @@ class WindowsIOBReader(IOBReader):
             for char in line:
                 chars.append(char)
         X = self.extractUniqueWindows(chars)
-        print(X)
+        #print(X)
 
         #X_enc = [[self.char2index[c] for c in x] for x in X]
 
@@ -291,10 +291,10 @@ class Tokenizer(object):
 
     def _model(self):
         model = Sequential()
-        model.add(Embedding(len(self.reader.char2index), 64, input_length=self.reader.maxlen, name='embedding_layer'))
+        model.add(Embedding(len(self.reader.char2index), 32, input_length=self.reader.maxlen, name='embedding_layer'))
 
         # FIXME return_sequences=self.reader==SequencesIOBReader <-- find a better way
-        model.add(LSTM(32, return_sequences=self.reader==SequencesIOBReader, name='lstm_layer'))
+        model.add(LSTM(32, return_sequences=False, name='lstm_layer'))
         model.add(Dense(len(self.reader.label2index), activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
         return model
@@ -303,6 +303,7 @@ class Tokenizer(object):
     def train(self, batch_size=128, nb_epoch=10):
         self.reader.read()
         self.model = self._model()
+        self.model.summary()
         
         self.model.fit(self.reader.X_train, 
                        self.reader.y_train, 
@@ -376,7 +377,8 @@ def main():
     subparsers = parser.add_subparsers()
 
     common_args = [
-        (['-w', '--window-size'], {'help':'window size', 'type':int, 'default':5})
+        (['-w', '--window-size'], {'help':'window size', 'type':int, 'default':5}),
+        (['-f', '--file-model'], {'help':'file model', 'type':str, 'default':'tokenizer.model'}),
     ]
 
     parser_train = subparsers.add_parser('train')
@@ -396,7 +398,7 @@ def main():
 
     if args.which == 'train':
         #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
-        tokenizer = Tokenizer(window_size=args.window_size, reader=WindowsIOBReader, writer=WindowsIOBWriter)
+        tokenizer = Tokenizer(window_size=args.window_size, file_model=args.file_model, reader=WindowsIOBReader, writer=WindowsIOBWriter)
         tokenizer.train(batch_size=args.batch, nb_epoch=args.epochs)
         tokenizer.save_model()
         score = tokenizer.evaluate()
@@ -408,13 +410,14 @@ def main():
         print()
         print(tokenizer.confusion_matrix(y_pred))
 
-        y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
+        #y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
 
     elif args.which == 'predict':
         #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
-        tokenizer = Tokenizer(window_size=args.window_size, reader=WindowsIOBReader, writer=WindowsIOBWriter)
+        tokenizer = Tokenizer(window_size=args.window_size, file_model=args.file_model, reader=WindowsIOBReader, writer=WindowsIOBWriter)
         tokenizer.load()
-        y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
+        #y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
+        y, p = tokenizer.tokenize(sys.stdin.read())
     
 if __name__ == '__main__':
     main()
