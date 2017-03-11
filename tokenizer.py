@@ -237,8 +237,8 @@ class WindowsIOBReader(IOBReader):
         X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
         y_enc = pad_sequences(y_enc)
 
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
-
+        X_train, X_dev, y_train, y_dev = train_test_split(X_enc, y_enc, random_state=42)
+        return X_train, y_train, X_dev, y_dev
 
 class Writer(object):
 
@@ -274,42 +274,38 @@ class SequencesIOBWriter(Writer):
 
 class Tokenizer(object):
 
-    def __init__(self, window_size=13, reader=WindowsIOBReader, writer=WindowsIOBWriter, file_model='tokenizer.model', input=sys.stdin, output=sys.stdout):
+    def __init__(self, window_size, max_features, writer, file_model, n_classes, input=sys.stdin, output=sys.stdout):
         self.input = input
         self.window_size = window_size
-        self.char2index = {}
-        self.index2char = {}
-        self.label2index = {}
-        self.index2label = {}
-        
-        self.maxlen = -1
-        
+        self.max_features=max_features
+        self.n_classes=n_classes
         self.file_model = file_model
-        self.reader = reader(input, window_size)
+        #self.reader = reader(input, window_size)
         self.writer = writer(output)
         
 
     def _model(self):
         model = Sequential()
-        model.add(Embedding(len(self.reader.char2index), 32, input_length=self.reader.maxlen, name='embedding_layer'))
+        model.add(Embedding(self.max_features, 32, input_length=self.window_size, name='embedding_layer'))
 
-        # FIXME return_sequences=self.reader==SequencesIOBReader <-- find a better way
+        # FIXME find a better way for return_sequences
         model.add(LSTM(32, return_sequences=False, name='lstm_layer'))
-        model.add(Dense(len(self.reader.label2index), activation='softmax', name='last_layer'))
+        model.add(Dense(self.n_classes, activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
         return model
 
 
-    def train(self, batch_size=128, nb_epoch=10):
-        self.reader.read()
+    def train(self, X, y, batch_size=128, nb_epoch=10):
+        #self.reader.read()
         self.model = self._model()
         self.model.summary()
         
-        self.model.fit(self.reader.X_train, 
-                       self.reader.y_train, 
+        self.model.fit(X, 
+                       y, 
                        batch_size=batch_size, 
                        nb_epoch=nb_epoch, 
-                       validation_data=(self.reader.X_test, self.reader.y_test),
+                       validation_split=0.25,
+                       #validation_data=(self.reader.X_test, self.reader.y_test),
                        callbacks=[
                            EarlyStopping(verbose=True, patience=5, monitor='val_loss'),
                            ModelCheckpoint('TestModel-progress', monitor='val_loss', verbose=True, save_best_only=True)
@@ -342,26 +338,34 @@ class Tokenizer(object):
         return y, p
         
 
-    def evaluate(self, batch_size=32):
-        return self.model.evaluate(self.reader.X_test, self.reader.y_test, batch_size=batch_size)
+    def evaluate(self, X_dev, y_dev, batch_size=32):
+        return self.model.evaluate(X_dev, y_dev, batch_size=batch_size)
         
 
-    def classification_report(self, y_pred):
-        #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
-        y_test = self.writer.write(self.reader.y_test)
-        return classification_report(y_test, y_pred, target_names=[self.reader.index2label[index] for index in sorted(self.reader.index2label)])
+    def classification_report(self, y_gold, y_pred, target_names):
+        return classification_report(y_gold, y_pred, target_names=target_names)
 
 
-    def confusion_matrix(self, y_pred):
-        #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
-        y_test = self.writer.write(self.reader.y_test)
-        return confusion_matrix(y_test, y_pred)
+    # def classification_report(self, y_pred):
+    #     #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+    #     y_test = self.writer.write(self.reader.y_test)
+    #     return classification_report(y_test, y_pred, target_names=[self.reader.index2label[index] for index in sorted(self.reader.index2label)])
+
+    def confusion_matrix(self, y_gold, y_pred):
+        return confusion_matrix(y_gold, y_pred)
 
 
-    def save_model(self):
+
+    # def confusion_matrix(self, y_pred):
+    #     #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
+    #     y_test = self.writer.write(self.reader.y_test)
+    #     return confusion_matrix(y_test, y_pred)
+
+
+    def save_model(self, reader):
         self.model.save(self.file_model)
         reader_file = open('%s_reader.pickle' % self.file_model, 'wb')
-        pickle.dump(self.reader.save(), reader_file)
+        pickle.dump(reader.save(), reader_file)
         reader_file.close()
 
 
@@ -398,17 +402,22 @@ def main():
 
     if args.which == 'train':
         #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
-        tokenizer = Tokenizer(window_size=args.window_size, file_model=args.file_model, reader=WindowsIOBReader, writer=WindowsIOBWriter)
-        tokenizer.train(batch_size=args.batch, nb_epoch=args.epochs)
-        tokenizer.save_model()
-        score = tokenizer.evaluate()
+        
+        reader = WindowsIOBReader(input=sys.stdin, window_size=args.window_size)
+        X_train, y_train, X_dev, y_dev = reader.read()
+
+        tokenizer = Tokenizer(window_size=args.window_size, max_features=len(reader.char2index), n_classes=len(reader.label2index), file_model=args.file_model, writer=WindowsIOBWriter)
+        
+        tokenizer.train(X_train, y_train, batch_size=args.batch, nb_epoch=args.epochs)
+        tokenizer.save_model(reader)
+        score = tokenizer.evaluate(X_dev, y_dev)
         print('Raw test score:', score)
 
-        y_pred, p = tokenizer.predict(tokenizer.reader.X_test)
+        y_pred, p = tokenizer.predict(X_dev)
 
-        print(tokenizer.classification_report(y_pred))
+        print(tokenizer.classification_report(tokenizer.writer.write(y_dev), y_pred, [reader.index2label[index] for index in sorted(reader.index2label)]))
         print()
-        print(tokenizer.confusion_matrix(y_pred))
+        print(tokenizer.confusion_matrix(tokenizer.writer.write(y_dev), y_pred))
 
         #y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
 
