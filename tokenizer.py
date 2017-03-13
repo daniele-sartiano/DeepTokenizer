@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 from __future__ import print_function
 
 import sys
@@ -6,7 +7,7 @@ import random
 import itertools
 import argparse
 import numpy as np
-import cPickle as pickle
+import pickle
 
 from keras.models import Sequential, load_model
 from keras.layers import Dense, Activation, LSTM, SimpleRNN, GRU, Dropout, Input, Flatten, TimeDistributed
@@ -22,7 +23,6 @@ class Reader(object):
 
     def __init__(self, input):
         self.input = input
-
 
     @staticmethod
     def encode(x, n):
@@ -48,6 +48,26 @@ class IOBReader(Reader):
         self.index2char = index2char
         self.label2index = label2index
         self.index2label = index2label
+
+
+    @staticmethod
+    def iob2text(input, delimiter='\t'):
+        for char_label in input:
+            print(char_label, file=sys.stderr)
+            char, label = char_label.split(delimiter) if delimiter else char_label
+            label = label.strip()
+            if label == 'B-S':
+                yield '\n%s' % char
+            elif label == 'B-T':
+                yield ' %s' % char
+            elif label == 'I-T':
+                yield char
+
+    @staticmethod
+    def char2text(input):
+        for char in input:
+            yield char.split('\n')[0]
+
 
 
 # class SequencesIOBReader(IOBReader):
@@ -134,7 +154,7 @@ class WindowsIOBReader(IOBReader):
             example = []
             
             for ii in range(self.window_size):
-                v = i-step+ii
+                v = int(i-step+ii)
                 if v < 0:
                     example.append('<padding>')
                 elif v >= len(dataset):
@@ -155,7 +175,7 @@ class WindowsIOBReader(IOBReader):
             example = []
             
             for ii in range(self.window_size):
-                v = i-step+ii
+                v = int(i-step+ii)
                 if v < 0:
                     example.append('<padding>')
                 elif v >= len(dataset):
@@ -211,16 +231,16 @@ class WindowsIOBReader(IOBReader):
         X_enc = [[self.char2index[c] if c in self.char2index else self.char2index['<unknown>'] for c in x] for x in X]
 
         self.max_label = max(self.label2index.values()) + 1
-
-        y_enc = [Reader.encode(self.label2index[c], self.window_size) for c in y]
+        
+        y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
         #X_enc = pad_sequences(X_enc, maxlen=self.window_size)
         #y_enc = pad_sequences(y_enc)
 
         if dev:
             X_train, X_dev, y_train, y_dev = train_test_split(X_enc, y_enc, random_state=42)
-            return X_train, y_train, X_dev, y_dev
+            return np.asarray(X_train), np.asarray(y_train), np.asarray(X_dev), np.asarray(y_dev)
         else:
-            return X_enc, y_enc
+            return np.asarray(X_enc), np.asarray(y_enc)
 
 
     def save(self):
@@ -294,7 +314,7 @@ class Tokenizer(object):
         #self.reader.read()
         self.model = self._model()
         self.model.summary()
-        
+
         self.model.fit(X, 
                        y, 
                        batch_size=batch_size, 
@@ -317,7 +337,7 @@ class Tokenizer(object):
         chars, X = reader.text2indexes(text)
         y, p = self.predict(X)
         for i, ch in enumerate(chars):
-            print(ch, reader.index2label[y[i]])
+            yield ch, reader.index2label[y[i]]
 
         # # sequences
         # index = 0
@@ -325,8 +345,6 @@ class Tokenizer(object):
         #     for ii, ch in enumerate(chars[i:i+self.window_size]):
         #         print(ch, self.reader.index2label[y[index][ii]])
         #     index += 1
-
-        return y, p
         
 
     def evaluate(self, X_dev, y_dev, batch_size=32):
@@ -376,12 +394,17 @@ def main():
     for arg in common_args:
         parser_predict.add_argument(*arg[0], **arg[1])
 
-
-    parser_predict = subparsers.add_parser('test')
-    parser_predict.set_defaults(which='test')
+    parser_test = subparsers.add_parser('test')
+    parser_test.set_defaults(which='test')
     for arg in common_args:
-        parser_predict.add_argument(*arg[0], **arg[1])
+        parser_test.add_argument(*arg[0], **arg[1])
     
+    parser_iob2text = subparsers.add_parser('iob2text')
+    parser_iob2text.set_defaults(which='iob2text')
+
+    parser_char2text = subparsers.add_parser('char2text')
+    parser_char2text.set_defaults(which='char2text')
+
 
     args = parser.parse_args()
 
@@ -410,9 +433,10 @@ def main():
         reader = WindowsIOBReader(input=sys.stdin)
         tokenizer.load(reader)
         #y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
-        y, p = tokenizer.tokenize(sys.stdin.read(), reader)
+        for token in IOBReader.iob2text(tokenizer.tokenize(sys.stdin.read(), reader), delimiter=None):
+            print(token, end='')
 
-    elif args.which == 'test':
+    elif args.which == 'test':        
         tokenizer = Tokenizer(window_size=args.window_size, max_features=None, n_classes=None, file_model=args.file_model, writer=WindowsIOBWriter)
         reader = WindowsIOBReader(input=sys.stdin)
         tokenizer.load(reader)
@@ -425,7 +449,15 @@ def main():
         print(tokenizer.classification_report(tokenizer.writer.write(y), y_pred, [reader.index2label[index] for index in sorted(reader.index2label)]))
         print()
         print(tokenizer.confusion_matrix(tokenizer.writer.write(y), y_pred))
-        
+
+    elif args.which == 'iob2text':
+        IOBReader.iob2text(sys.stdin)
+
+    elif args.which == 'char2text':
+        for ch in IOBReader.char2text(sys.stdin):
+            print(ch, end='')
+
         
 if __name__ == '__main__':
     main()
+    import gc; gc.collect()
