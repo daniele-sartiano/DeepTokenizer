@@ -40,12 +40,6 @@ class IOBReader(Reader):
         self.label2index = {}
         self.index2label = {}
 
-        self.X_train = []
-        self.X_test = []
-
-        self.y_train = []
-        self.y_test = []
-    
     def save(self):
         return [self.char2index, self.index2char, self.label2index, self.index2label]
     
@@ -184,8 +178,7 @@ class WindowsIOBReader(IOBReader):
         X = self.extractUniqueWindows(chars)
 
         X_enc = [[self.char2index[c] if c in self.char2index else self.char2index['<unknown>'] for c in x] for x in X]
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-
+        #X_enc = pad_sequences(X_enc, maxlen=self.window_size)
         return chars, X_enc
 
     
@@ -213,15 +206,15 @@ class WindowsIOBReader(IOBReader):
 
         X, y = self.extractWindows(X, y)
         
-        self.maxlen = max([len(x) for x in X])
+        #self.maxlen = max([len(x) for x in X])
 
         X_enc = [[self.char2index[c] if c in self.char2index else self.char2index['<unknown>'] for c in x] for x in X]
 
         self.max_label = max(self.label2index.values()) + 1
 
-        y_enc = [Reader.encode(self.label2index[c], self.max_label) for c in y]
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        y_enc = pad_sequences(y_enc)
+        y_enc = [Reader.encode(self.label2index[c], self.window_size) for c in y]
+        #X_enc = pad_sequences(X_enc, maxlen=self.window_size)
+        #y_enc = pad_sequences(y_enc)
 
         if dev:
             X_train, X_dev, y_train, y_dev = train_test_split(X_enc, y_enc, random_state=42)
@@ -320,15 +313,11 @@ class Tokenizer(object):
         return y, p
 
 
-    def tokenize(self, text, format='iob'):
-        chars, X = self.reader.text2indexes(text)
+    def tokenize(self, text, reader, format='iob'):
+        chars, X = reader.text2indexes(text)
         y, p = self.predict(X)
-
-        print(len(chars))
-        print(len(y))
-
         for i, ch in enumerate(chars):
-            print(ch, self.reader.index2label[y[i]])
+            print(ch, reader.index2label[y[i]])
 
         # # sequences
         # index = 0
@@ -417,13 +406,14 @@ def main():
 
     elif args.which == 'predict':
         #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
-        tokenizer = Tokenizer(window_size=args.window_size, file_model=args.file_model, reader=WindowsIOBReader, writer=WindowsIOBWriter)
-        tokenizer.load()
+        tokenizer = Tokenizer(window_size=args.window_size, max_features=None, n_classes=None, file_model=args.file_model, writer=WindowsIOBWriter)
+        reader = WindowsIOBReader(input=sys.stdin)
+        tokenizer.load(reader)
         #y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
-        y, p = tokenizer.tokenize(sys.stdin.read())
+        y, p = tokenizer.tokenize(sys.stdin.read(), reader)
+
     elif args.which == 'test':
         tokenizer = Tokenizer(window_size=args.window_size, max_features=None, n_classes=None, file_model=args.file_model, writer=WindowsIOBWriter)
-
         reader = WindowsIOBReader(input=sys.stdin)
         tokenizer.load(reader)
         X, y = reader.read(dev=False)
