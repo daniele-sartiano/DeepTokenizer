@@ -68,7 +68,22 @@ class IOBReader(Reader):
         for char in input:
             yield char.split('\n')[0]
 
-
+    @staticmethod
+    def text2iob(input):
+        for line in input:
+            for i, ch in enumerate(line):
+                if ch == '\n':
+                    continue
+                if ch == ' ':
+                    yield ch, 'O'
+                elif i == 0 or line[i-1] == '\n':
+                    yield ch, 'B-S'
+                elif line[i-1] == ' ':
+                    yield ch, 'B-T'
+                else:
+                    yield ch, 'I-T'
+                
+                
 
 # class SequencesIOBReader(IOBReader):
 
@@ -327,15 +342,15 @@ class Tokenizer(object):
                        ])
 
 
-    def predict(self, X_test):
-        y = self.model.predict_classes(X_test)
-        p = self.model.predict_proba(X_test)
+    def predict(self, X_test, verbose=1):
+        y = self.model.predict_classes(X_test, verbose=verbose)
+        p = self.model.predict_proba(X_test, verbose=verbose)
         return y, p
 
 
     def tokenize(self, text, reader, format='iob'):
         chars, X = reader.text2indexes(text)
-        y, p = self.predict(X)
+        y, p = self.predict(X, verbose=0)
         for i, ch in enumerate(chars):
             yield ch, reader.index2label[y[i]]
 
@@ -405,6 +420,9 @@ def main():
     parser_char2text = subparsers.add_parser('char2text')
     parser_char2text.set_defaults(which='char2text')
 
+    parser_text2iob = subparsers.add_parser('text2iob')
+    parser_text2iob.set_defaults(which='text2iob')
+
 
     args = parser.parse_args()
 
@@ -456,6 +474,10 @@ def main():
     elif args.which == 'char2text':
         for ch in IOBReader.char2text(sys.stdin):
             print(ch, end='')
+
+    elif args.which == 'text2iob':
+        for ch, iob in IOBReader.text2iob(sys.stdin):
+            print('%s\t%s' % (ch, iob))
 
         
 if __name__ == '__main__':
