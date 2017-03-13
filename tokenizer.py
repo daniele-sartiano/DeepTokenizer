@@ -39,7 +39,6 @@ class IOBReader(Reader):
         self.index2char = {}
         self.label2index = {}
         self.index2label = {}
-        self.maxlen = -1
 
         self.X_train = []
         self.X_test = []
@@ -48,86 +47,85 @@ class IOBReader(Reader):
         self.y_test = []
     
     def save(self):
-        return [self.char2index, self.index2char, self.label2index, self.index2label, self.maxlen]
+        return [self.char2index, self.index2char, self.label2index, self.index2label]
     
-    def load(self, char2index, index2char, label2index, index2label, maxlen):
+    def load(self, char2index, index2char, label2index, index2label):
         self.char2index = char2index
         self.index2char = index2char
         self.label2index = label2index
         self.index2label = index2label
-        self.maxlen = maxlen
 
 
-class SequencesIOBReader(IOBReader):
+# class SequencesIOBReader(IOBReader):
 
-    def __init__(self, input, window_size):
-        super(SequencesIOBReader, self).__init__(input)
-        self.window_size = window_size
-
-
-    def extractWindows(self, dataset, labels):
-        d = []
-        l = []
-        for i in range(len(dataset)-self.window_size+1):
-            d.append(dataset[i:i+self.window_size])
-            l.append(labels[i:i+self.window_size])
-        return np.asarray(d), np.asarray(l)
+#     def __init__(self, input, window_size):
+#         super(SequencesIOBReader, self).__init__(input)
+#         self.window_size = window_size
 
 
-    def extractUniqueWindows(self, dataset):
-        d = []
-        for i in range(0, len(dataset), self.window_size):
-            d.append(dataset[i:i+self.window_size])
-        return d
+#     def extractWindows(self, dataset, labels):
+#         d = []
+#         l = []
+#         for i in range(len(dataset)-self.window_size+1):
+#             d.append(dataset[i:i+self.window_size])
+#             l.append(labels[i:i+self.window_size])
+#         return np.asarray(d), np.asarray(l)
 
 
-    def text2indexes(self, text):
-        chars = []
-        for line in text:
-            for char in line:
-                chars.append(char)
-        X = self.extractUniqueWindows(chars)
-        X_enc = [[self.char2index[c] for c in x] for x in X]
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        return chars, X_enc
+#     def extractUniqueWindows(self, dataset):
+#         d = []
+#         for i in range(0, len(dataset), self.window_size):
+#             d.append(dataset[i:i+self.window_size])
+#         return d
 
 
-    def read(self, delimiter='\t'):
-        X = []
-        y = []
+#     def text2indexes(self, text):
+#         chars = []
+#         for line in text:
+#             for char in line:
+#                 chars.append(char)
+#         X = self.extractUniqueWindows(chars)
+#         X_enc = [[self.char2index[c] for c in x] for x in X]
+#         X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+#         return chars, X_enc
 
-        for line in self.input:
-            char, label = (ch for ch in line.split(delimiter))
-            X.append(char)
-            y.append(label.strip())
+
+#     def read(self, delimiter='\t'):
+#         X = []
+#         y = []
+
+#         for line in self.input:
+#             char, label = (ch for ch in line.split(delimiter))
+#             X.append(char)
+#             y.append(label.strip())
         
-        for i, c in enumerate(set(X)):
-            self.char2index[c] = i
-            self.index2char[i] = c
+#         for i, c in enumerate(set(X)):
+#             self.char2index[c] = i
+#             self.index2char[i] = c
 
-        for i, l in enumerate(set(y)):
-            self.label2index[l] = i
-            self.index2label[i] = l
+#         for i, l in enumerate(set(y)):
+#             self.label2index[l] = i
+#             self.index2label[i] = l
 
-        X, y = self.extractWindows(X, y)
+#         X, y = self.extractWindows(X, y)
 
-        self.maxlen = max([len(x) for x in X])
+#         self.maxlen = max([len(x) for x in X])
 
-        X_enc = [[self.char2index[c] for c in x] for x in X]
-        self.max_label = max(self.label2index.values()) + 1
+#         X_enc = [[self.char2index[c] for c in x] for x in X]
+#         self.max_label = max(self.label2index.values()) + 1
 
-        #one_hot
-        y_enc = [[Reader.encode(self.label2index[c], self.max_label) for c in ey] for ey in y]
+#         #one_hot
+#         y_enc = [[Reader.encode(self.label2index[c], self.max_label) for c in ey] for ey in y]
 
-        X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
-        y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
+#         X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
+#         y_enc = pad_sequences(y_enc, maxlen=self.maxlen)
 
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
+#         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X_enc, y_enc, random_state=42)
 
 
 class WindowsIOBReader(IOBReader):
 
-    def __init__(self, input, window_size):
+    def __init__(self, input, window_size=None):
         super(WindowsIOBReader, self).__init__(input)
         self.window_size = window_size
 
@@ -184,27 +182,14 @@ class WindowsIOBReader(IOBReader):
             for char in line:
                 chars.append(char)
         X = self.extractUniqueWindows(chars)
-        #print(X)
 
-        #X_enc = [[self.char2index[c] for c in x] for x in X]
-
-        X_enc =  []
-        for x in X:
-            w = []
-            for c in x:
-                try:
-                    w.append(self.char2index[c])
-                except:
-                    print('%s unknown' % c, file=sys.stderr)
-                    w.append(self.char2index['<unknown>'])
-            X_enc.append(w)
-
+        X_enc = [[self.char2index[c] if c in self.char2index else self.char2index['<unknown>'] for c in x] for x in X]
         X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
 
         return chars, X_enc
 
     
-    def read(self, delimiter='\t'):
+    def read(self, delimiter='\t', dev=True):
         X = []
         y = []
 
@@ -212,24 +197,25 @@ class WindowsIOBReader(IOBReader):
             char, label = (ch for ch in line.split(delimiter))
             X.append(char)
             y.append(label.strip())
-        
-        for i, c in enumerate(set(X)):
-            self.char2index[c] = i
-            self.index2char[i] = c
-        self.index2char[len(self.index2char)] = '<padding>'
-        self.char2index['<padding>'] = len(self.index2char)-1
-        self.index2char[len(self.index2char)] = '<unknown>'
-        self.char2index['<unknown>'] = len(self.index2char)-1
 
-        for i, l in enumerate(set(y)):
-            self.label2index[l] = i
-            self.index2label[i] = l
+        if not self.char2index: # else with load
+            for i, c in enumerate(set(X)):
+                self.char2index[c] = i
+                self.index2char[i] = c
+            self.index2char[len(self.index2char)] = '<padding>'
+            self.char2index['<padding>'] = len(self.index2char)-1
+            self.index2char[len(self.index2char)] = '<unknown>'
+            self.char2index['<unknown>'] = len(self.index2char)-1
+
+            for i, l in enumerate(set(y)):
+                self.label2index[l] = i
+                self.index2label[i] = l
 
         X, y = self.extractWindows(X, y)
-
+        
         self.maxlen = max([len(x) for x in X])
 
-        X_enc = [[self.char2index[c] for c in x] for x in X]
+        X_enc = [[self.char2index[c] if c in self.char2index else self.char2index['<unknown>'] for c in x] for x in X]
 
         self.max_label = max(self.label2index.values()) + 1
 
@@ -237,8 +223,24 @@ class WindowsIOBReader(IOBReader):
         X_enc = pad_sequences(X_enc, maxlen=self.maxlen)
         y_enc = pad_sequences(y_enc)
 
-        X_train, X_dev, y_train, y_dev = train_test_split(X_enc, y_enc, random_state=42)
-        return X_train, y_train, X_dev, y_dev
+        if dev:
+            X_train, X_dev, y_train, y_dev = train_test_split(X_enc, y_enc, random_state=42)
+            return X_train, y_train, X_dev, y_dev
+        else:
+            return X_enc, y_enc
+
+
+    def save(self):
+        fields = super(WindowsIOBReader, self).save()
+        fields.append(self.window_size)
+        return fields
+
+    
+    def load(self, char2index, index2char, label2index, index2label, window_size):
+        super(WindowsIOBReader, self).load(char2index, index2char, label2index, index2label)
+        self.window_size = window_size
+
+
 
 class Writer(object):
 
@@ -346,20 +348,8 @@ class Tokenizer(object):
         return classification_report(y_gold, y_pred, target_names=target_names)
 
 
-    # def classification_report(self, y_pred):
-    #     #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
-    #     y_test = self.writer.write(self.reader.y_test)
-    #     return classification_report(y_test, y_pred, target_names=[self.reader.index2label[index] for index in sorted(self.reader.index2label)])
-
     def confusion_matrix(self, y_gold, y_pred):
         return confusion_matrix(y_gold, y_pred)
-
-
-
-    # def confusion_matrix(self, y_pred):
-    #     #y_test, y_pred = self.writer.write(self.reader.y_test, y_pred)
-    #     y_test = self.writer.write(self.reader.y_test)
-    #     return confusion_matrix(y_test, y_pred)
 
 
     def save_model(self, reader):
@@ -369,10 +359,10 @@ class Tokenizer(object):
         reader_file.close()
 
 
-    def load(self):
+    def load(self, reader):
         self.model = load_model(self.file_model)
         reader_file = open('%s_reader.pickle' % self.file_model, 'rb')
-        self.reader.load(*pickle.load(reader_file))
+        reader.load(*pickle.load(reader_file))
 
 
 
@@ -388,12 +378,18 @@ def main():
     parser_train = subparsers.add_parser('train')
     parser_train.set_defaults(which='train')
     parser_train.add_argument('-epochs', '--epochs', help='Epochs', type=int, default=20)
-    parser_train.add_argument('-batch', '--batch', help='# batch', type=int, default=128)
+    parser_train.add_argument('-batch', '--batch', help='# batch', type=int, default=256)
     for arg in common_args:
         parser_train.add_argument(*arg[0], **arg[1])
     
     parser_predict = subparsers.add_parser('predict')
     parser_predict.set_defaults(which='predict')
+    for arg in common_args:
+        parser_predict.add_argument(*arg[0], **arg[1])
+
+
+    parser_predict = subparsers.add_parser('test')
+    parser_predict.set_defaults(which='test')
     for arg in common_args:
         parser_predict.add_argument(*arg[0], **arg[1])
     
@@ -419,14 +415,27 @@ def main():
         print()
         print(tokenizer.confusion_matrix(tokenizer.writer.write(y_dev), y_pred))
 
-        #y, p = tokenizer.tokenize('domani vado al mare.Dopodomani no.')
-
     elif args.which == 'predict':
         #tokenizer = Tokenizer(window_size=args.window_size, reader=SequencesIOBReader, writer=SequencesIOBWriter)
         tokenizer = Tokenizer(window_size=args.window_size, file_model=args.file_model, reader=WindowsIOBReader, writer=WindowsIOBWriter)
         tokenizer.load()
         #y, p = tokenizer.tokenize("Domani vado in ufficio.Dopodomani vado al mare!Ho voglia di vedere un \"bel\" film.")
         y, p = tokenizer.tokenize(sys.stdin.read())
-    
+    elif args.which == 'test':
+        tokenizer = Tokenizer(window_size=args.window_size, max_features=None, n_classes=None, file_model=args.file_model, writer=WindowsIOBWriter)
+
+        reader = WindowsIOBReader(input=sys.stdin)
+        tokenizer.load(reader)
+        X, y = reader.read(dev=False)
+
+        score = tokenizer.evaluate(X, y)
+
+        y_pred, p = tokenizer.predict(X)
+
+        print(tokenizer.classification_report(tokenizer.writer.write(y), y_pred, [reader.index2label[index] for index in sorted(reader.index2label)]))
+        print()
+        print(tokenizer.confusion_matrix(tokenizer.writer.write(y), y_pred))
+        
+        
 if __name__ == '__main__':
     main()
