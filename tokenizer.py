@@ -316,17 +316,18 @@ class Tokenizer(object):
 
     def _model(self):
         model = Sequential()
-        model.add(Embedding(self.max_features, 32, input_length=self.window_size, name='embedding_layer'))
 
-        # FIXME find a better way for return_sequences
-        model.add(LSTM(32, return_sequences=False, name='lstm_layer'))
+        
+        model.add(Embedding(self.max_features, 128, input_length=self.window_size, name='embedding_layer'))
+
+        # # FIXME find a better way for return_sequences
+        model.add(LSTM(100, return_sequences=False, name='lstm_layer'))
         model.add(Dense(self.n_classes, activation='softmax', name='last_layer'))
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
         return model
 
 
     def train(self, X, y, batch_size=128, nb_epoch=10):
-        #self.reader.read()
         self.model = self._model()
         self.model.summary()
 
