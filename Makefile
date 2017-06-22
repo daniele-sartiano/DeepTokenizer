@@ -12,7 +12,10 @@ EPOCHS = 20
 
 ### Dataset
 
-$(DATA)/ud-treebanks-v2.0.tgz:
+$(DATA):
+	mkdir -p $@
+
+$(DATA)/ud-treebanks-v2.0.tgz: $(DATA)
 	wget $(LINK) -O $@
 
 $(DATA)/ud-treebanks-v2.0: $(DATA)/ud-treebanks-v2.0.tgz
@@ -43,5 +46,5 @@ $(TRAIN)/multi_train.tok: $(TRAIN)
 
 ITALIAN_TRAIN = $(TRAIN)/UD_Italian/train.tok
 
-tokenizer_it.model: $(ITALIAN_TRAIN)
-	./tokenizer.py train -epochs $(EPOCHS) -w $(WINDOW) -batch $(BATCH) -f $@ < $<
+tokenizer_it.model: $(TRAIN)
+	./tokenizer.py train -epochs $(EPOCHS) -w $(WINDOW) -batch $(BATCH) -f $@ < $(ITALIAN_TRAIN)
